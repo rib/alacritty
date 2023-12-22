@@ -435,7 +435,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         let lmb_pressed = self.ctx.mouse().left_button_state == ElementState::Pressed;
         let rmb_pressed = self.ctx.mouse().right_button_state == ElementState::Pressed;
-        if !self.ctx.selection_is_empty() && (lmb_pressed || rmb_pressed) {
+        if !self.ctx.selection_is_empty() && lmb_pressed && !rmb_pressed {
             self.update_selection_scrolling(y);
         }
 
@@ -474,7 +474,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         // Don't launch URLs if mouse has moved.
         self.ctx.mouse_mut().block_hint_launcher = true;
 
-        if (lmb_pressed || rmb_pressed)
+        if (lmb_pressed && !rmb_pressed)
             && (self.ctx.modifiers().state().shift_key() || !self.ctx.mouse_mode())
         {
             self.ctx.update_selection(point, cell_side);
@@ -592,6 +592,15 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     }
 
     fn on_mouse_press(&mut self, button: MouseButton) {
+        if let MouseButton::Right = button {
+            if !self.ctx.selection_is_empty() {
+                self.ctx.copy_selection(ClipboardType::Clipboard);
+                self.ctx.clear_selection();
+            } else if !self.ctx.mouse_mode() || self.ctx.modifiers().state().shift_key() {
+                let text = self.ctx.clipboard_mut().load(ClipboardType::Clipboard);
+                self.ctx.paste(&text, false);
+            }
+        }
         // Handle mouse mode.
         if !self.ctx.modifiers().state().shift_key() && self.ctx.mouse_mode() {
             self.ctx.mouse_mut().click_state = ClickState::None;
@@ -692,10 +701,12 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
         self.ctx.scheduler_mut().unschedule(timer_id);
 
-        if let MouseButton::Left | MouseButton::Right = button {
+
+        if let MouseButton::Left = button {
             // Copy selection on release, to prevent flooding the display server.
             self.ctx.copy_selection(ClipboardType::Selection);
         }
+
     }
 
     pub fn mouse_wheel_input(&mut self, delta: MouseScrollDelta, phase: TouchPhase) {
